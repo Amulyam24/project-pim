@@ -1,0 +1,29 @@
+[Unit]
+Description=vLLM Engine Daemon on AMD ROCm (ppc64le)
+Requires=base_config.service
+Wants=network-online.target cloud-config.target
+After=base_config.service network-online.target cloud-config.target
+
+[Service]
+Type=simple
+User=root
+
+# Hardware and library paths baked into the ROCm base image
+Environment=ROCM_PATH=/opt/rocm
+Environment=ROCM_HOME=/opt/rocm
+Environment=PYTORCH_ROCM_ARCH=gfx90a
+Environment=PATH=/usr/local/vllm-venv/bin:/opt/rocm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=LD_LIBRARY_PATH=/usr/local/vllm-venv/lib/python3.12/site-packages/_rocm_sdk_core/lib:/usr/local/vllm-venv/lib/python3.12/site-packages/torch/lib
+Environment=PYTHONPATH=/usr/local/vllm-venv/lib64/python3.12/site-packages/_rocm_sdk_core/share/amd_smi
+
+ExecStart=/usr/local/vllm-venv/bin/python -m vllm.entrypoints.openai.api_server \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --model ibm-granite/granite-3.3-8b-instruct \
+    --dtype float16
+
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

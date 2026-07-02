@@ -38,10 +38,12 @@ RUN systemctl enable base_config.service
 systemd service to setup pimconfig like copying cloud init config and pim config files to respective directory
 
 ## Build
+
+### Standard (ppc64le)
 We have pre-built the base-image and its available to consume directly via below image
 ```
 quay.io/powercloud/pim:base
-``` 
+```
 
 If you wish to build your own version, you can follow below steps to build it.
 
@@ -52,4 +54,42 @@ podman build -t localhost/pim-base .
 
 podman tag localhost/pim-base quay.io/<account-id>/pim:base
 podman push quay.io/<account-id>/pim:base
+```
+
+---
+
+## AMD ROCm Variant
+
+[`Containerfile.rocm`](Containerfile.rocm) is a separate base image flavour for AMD ROCm on ppc64le. It extends the same Fedora bootc base but additionally:
+
+- Replaces the default Fedora kernel with a **custom AMD GPU kernel** (`custom-kernel/`)
+- Installs the **ROCm SDK wheels** from a local directory (`custom-rocm/`) into a system-wide Python 3.12 venv at `/usr/local/vllm-venv`
+- Wires in the same PIM `base_config.service` so cloud-init ISO mounting and `pim_config.json` injection work identically to the standard base image
+
+### Required local assets
+
+Before building, populate these two directories alongside `Containerfile.rocm`:
+
+```
+base-image/
+├── Containerfile.rocm
+├── custom-kernel/
+│   ├── vmlinuz
+│   └── modules/
+│       └── <kernel-ver>/
+└── custom-rocm/
+    ├── rocm-*.whl
+    ├── rocm_sdk_core-*.whl
+    ├── rocm_sdk_devel-*.whl
+    └── rocm_sdk_libraries_*.whl
+```
+
+### Build
+
+```shell
+# Run from the base-image/ directory
+podman build -t localhost/pim-base-rocm -f Containerfile.rocm .
+
+podman tag localhost/pim-base-rocm quay.io/<account-id>/pim:base-rocm
+podman push quay.io/<account-id>/pim:base-rocm
 ```

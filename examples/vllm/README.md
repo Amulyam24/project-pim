@@ -1,5 +1,8 @@
 # vLLM
 
+> This directory contains two variants: the standard **ppc64le CPU-based** vLLM image and an **AMD ROCm GPU** variant. Jump to [AMD ROCm variant](#amd-rocm-variant) if that is what you need.
+
+
 vLLM example allows you to deploy vLLM inference engine that exposes OpenAI API server on a partition which allows you to leverage the GenAI capabilities on your on prem environment.
 
 ## Architecture
@@ -43,6 +46,79 @@ podman build -t <your registry>/pim:vllm
 
 podman push <your registry>/pim:vllm
 ```
+
+---
+
+## AMD ROCm Variant
+
+[`Containerfile.rocm`](Containerfile.rocm) builds a vLLM PIM bootc image for AMD ROCm on ppc64le.
+
+### Architecture
+
+```
+base-image/Containerfile.rocm      →  quay.io/<account>/pim:base-rocm
+        ↓ (FROM)
+examples/vllm/Containerfile.rocm   →  quay.io/<account>/pim:vllm-rocm
+        ↓ (bootc deploy)
+AMD GPU machine running vllm-rocm.service on port 8000
+```
+
+### Required local assets
+
+Before building, populate `custom-rocm/` inside `examples/vllm/` with the torch/triton/vllm wheels (the ROCm SDK wheels belong in `base-image/custom-rocm/`):
+
+```
+examples/vllm/
+├── Containerfile.rocm
+├── vllm-rocm.service
+└── custom-rocm/
+    ├── torch-*.whl
+    ├── torchvision-*.whl
+    ├── torchaudio-*.whl
+    ├── triton-*.whl
+    └── vllm-*.whl
+```
+
+### Step 1: Build the base ROCm image
+
+Follow the steps in [`base-image/README.md`](../../base-image/README.md#amd-rocm-variant) to build and push `pim:base-rocm` first, then update the `FROM` line in `Containerfile.rocm` with your registry tag.
+
+### Step 2: Build the vLLM ROCm bootc image
+
+```shell
+# Run from the examples/vllm/ directory
+podman build -t localhost/pim-vllm-rocm -f Containerfile.rocm .
+
+podman tag localhost/pim-vllm-rocm quay.io/<account-id>/pim:vllm-rocm
+podman push quay.io/<account-id>/pim:vllm-rocm
+```
+
+### Step 3: Deploy via PIM
+
+In `config.ini`, update the two fields below. Everything else (`[partition]`, `[network]`, `[storage]`, `[ssh]`) stays the same as any other PIM deployment.
+
+```ini
+[ai]
+  image = "quay.io/<account-id>/pim:vllm-rocm"
+  config-json = """"""    # leave empty — model and args are baked into vllm-rocm.service
+  auth-json = """"""      # add registry credentials here if your image is in a private registry
+  [[validation]]
+    request = "yes"
+    url = "http://<partition-ip>:8000/v1/chat/completions"
+    method = "POST"
+    headers = """{"Content-Type": "application/json"}"""
+    payload = """{"model": "ibm-granite/granite-3.3-8b-instruct", "messages": [{"role": "user", "content": "What is the capital of France?"}]}"""
+```
+
+`config-json` can be left empty — the CLI treats it as `{}` and only adds `workloadImage` to it automatically. `llmImage` / `llmArgs` / `llmEnv` are not needed because the model and runtime args are baked directly into [`vllm-rocm.service`](vllm-rocm.service). To change the model or flags after deployment, update the service file, rebuild, push, and run `python3 cli/pim.py upgrade`.
+
+Then run the standard launch:
+
+```shell
+python3 cli/pim.py launch
+```
+
+The vLLM OpenAI API server will be available on port `8000` once the partition boots.
 
 ### Step 2: Setting up PIM partition
 
